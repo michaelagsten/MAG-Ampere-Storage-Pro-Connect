@@ -107,16 +107,19 @@ class AmpereStorageProModbusHub(DataUpdateCoordinator[dict]):
 
     async def ensure_modbus_connection(self) -> None:
         """Ensure the Modbus connection is established and stable."""
-        if self._client and self._client.connected:
-            return
+        async with self._connection_lock:
+            if self._client and self._client.connected:
+                return
 
-        self._client = self._client or self._create_client()
-        try:
-            await asyncio.wait_for(self._client.connect(), timeout=10)
-            _LOGGER.info("Successfully connected to Modbus server.")
-        except Exception as e:
-            _LOGGER.warning("Error during connection attempt: %s", e, exc_info=True)
-            raise ConnectionException("Failed to connect to Modbus server.") from e
+            self._client = self._client or self._create_client()
+            try:
+                await asyncio.wait_for(self._client.connect(), timeout=10)
+                await asyncio.sleep(0.3)
+                _LOGGER.info("Successfully connected to Modbus server.")
+            except Exception as e:
+                await self._safe_close()
+                _LOGGER.warning("Error during connection attempt: %s", e, exc_info=True)
+                raise ConnectionException("Failed to connect to Modbus server.") from e
 
     async def _read_holding_registers_single(
         self,
@@ -175,12 +178,11 @@ class AmpereStorageProModbusHub(DataUpdateCoordinator[dict]):
                     type(e).__name__,
                 )
 
+                await self._safe_close()
+
                 if attempt < max_retries - 1:
                     delay = min(base_delay * (2**attempt), 10.0)
                     await asyncio.sleep(delay)
-
-                    if not await self._safe_close():
-                        _LOGGER.warning("Failed to safely close the Modbus client.")
 
                     try:
                         await self.ensure_modbus_connection()
@@ -214,12 +216,12 @@ class AmpereStorageProModbusHub(DataUpdateCoordinator[dict]):
         Read Modbus holding registers with automatic chunking.
 
         Modbus allows max. 125 registers per request.
-        We use 120 as a conservative chunk size.
+        We use 60 as a conservative chunk size.
         """
         if count <= 0:
             return []
 
-        max_chunk_size = 120
+        max_chunk_size = 60
         all_registers: List[int] = []
 
         offset = 0
@@ -236,6 +238,9 @@ class AmpereStorageProModbusHub(DataUpdateCoordinator[dict]):
             )
             all_registers.extend(chunk)
             offset += chunk_count
+
+            if offset < count:
+                await asyncio.sleep(0.15)
 
         return all_registers
 
@@ -269,13 +274,13 @@ class AmpereStorageProModbusHub(DataUpdateCoordinator[dict]):
                 return all_read_data
 
         except asyncio.TimeoutError as e:
-            self._suspend_until = asyncio.get_running_loop().time() + 90
+            self._suspend_until = asyncio.get_running_loop().time() + 120
             _LOGGER.error("Timed out during Modbus update cycle: %s", e, exc_info=True)
             if self.data:
                 return dict(self.data)
             raise
         except Exception as e:
-            self._suspend_until = asyncio.get_running_loop().time() + 90
+            self._suspend_until = asyncio.get_running_loop().time() + 120
             _LOGGER.error("Modbus update cycle failed completely: %s", e, exc_info=True)
             if self.data:
                 return dict(self.data)
