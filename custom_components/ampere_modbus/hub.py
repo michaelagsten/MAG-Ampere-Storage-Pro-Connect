@@ -1019,11 +1019,6 @@ class AmpereStorageProModbusHub(DataUpdateCoordinator[dict]):
         try:
             register_list = await self.read_holding_registers(self._unit, 0x4031, 15)
 
-            # Offsets within this block (0-based)
-            # addr 0x4031 => idx 0
-            # addr 0x4033 => idx 2
-            # addr 0x4038 => idx 7
-            # addr 0x403F => idx 14
             data: dict = {}
 
             r_v_raw = register_list[0]
@@ -1036,14 +1031,9 @@ class AmpereStorageProModbusHub(DataUpdateCoordinator[dict]):
             data["grid_voltage_l3"] = round(t_v_raw * 0.1, 1)
             data["grid_frequency"] = round(r_f_raw * 0.01, 2)
 
-            # Optional: wenn Du die Frequenz je Phase willst (falls im Gerät belegt)
-            # s_f_raw = register_list[9]   # 0x403A - 0x4031 = 0x09
-            # t_f_raw = register_list[16]  # wäre außerhalb; deshalb nur wenn Du Block größer machst
-            # -> Für T-Frequenz (0x4041) müsstest Du ab 0x4031 count=17 lesen.
-
             return data
 
         except Exception as e:
-            _LOGGER.error(f"Error reading AC grid data: {e}")
+            _LOGGER.error("Error reading AC grid data: %s", e)
             return {}
 
