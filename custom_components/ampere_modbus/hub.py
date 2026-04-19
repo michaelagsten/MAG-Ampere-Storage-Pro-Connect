@@ -408,7 +408,7 @@ class AmpereStorageProModbusHub(DataUpdateCoordinator[dict]):
             return {}
 
     async def read_modbus_longterm_data(self) -> dict:
-         try:
+        try:
             # IMPORTANT: extended block to reach 0x4167
             registerList = await self.read_holding_registers(self._unit, 0x40BF, 200)
             position: int = 0
