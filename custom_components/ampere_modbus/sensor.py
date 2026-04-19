@@ -456,5 +456,21 @@ SENSOR_TYPES: dict[str, list[AmpereModbusSensorEntityDescription]] = {
         entity_registry_enabled_default=True,
     ),
 
+    "TotalGridExportEnergy": AmpereModbusSensorEntityDescription(
+    name="Total Grid Export Energy",
+    key="totalgridexportenergy",
+    native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+    device_class=SensorDeviceClass.ENERGY,
+    state_class=SensorStateClass.TOTAL_INCREASING,
+    ),
+
+    "TotalGridImportEnergy": AmpereModbusSensorEntityDescription(
+    name="Total Grid Import Energy",
+    key="totalgridimportenergy",
+    native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+    device_class=SensorDeviceClass.ENERGY,
+    state_class=SensorStateClass.TOTAL_INCREASING,
+    ),
+
 }
 
