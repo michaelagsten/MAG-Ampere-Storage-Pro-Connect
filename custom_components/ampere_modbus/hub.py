@@ -408,11 +408,13 @@ class AmpereStorageProModbusHub(DataUpdateCoordinator[dict]):
             return {}
 
     async def read_modbus_longterm_data(self) -> dict:
-        try:
-            registerList = await self.read_holding_registers(self._unit, 0x40BF, 88)
+         try:
+            # IMPORTANT: extended block to reach 0x4167
+            registerList = await self.read_holding_registers(self._unit, 0x40BF, 200)
             position: int = 0
             data = {}
 
+            # --- PV ---
             value, position = self.decode_32bit_uint(registerList, position)
             data["dailypvgeneration"] = round(value * 0.01, 2)
             value, position = self.decode_32bit_uint(registerList, position)
@@ -422,6 +424,7 @@ class AmpereStorageProModbusHub(DataUpdateCoordinator[dict]):
             value, position = self.decode_32bit_uint(registerList, position)
             data["totalpvgeneration"] = round(value * 0.01, 2)
 
+            # --- Battery charge ---
             value, position = self.decode_32bit_uint(registerList, position)
             data["dailychargebattery"] = round(value * 0.01, 2)
             value, position = self.decode_32bit_uint(registerList, position)
@@ -431,6 +434,7 @@ class AmpereStorageProModbusHub(DataUpdateCoordinator[dict]):
             value, position = self.decode_32bit_uint(registerList, position)
             data["totalchargebattery"] = round(value * 0.01, 2)
 
+            # --- Battery discharge ---
             value, position = self.decode_32bit_uint(registerList, position)
             data["dailydischargebattery"] = round(value * 0.01, 2)
             value, position = self.decode_32bit_uint(registerList, position)
@@ -440,32 +444,46 @@ class AmpereStorageProModbusHub(DataUpdateCoordinator[dict]):
             value, position = self.decode_32bit_uint(registerList, position)
             data["totaldischargebattery"] = round(value * 0.01, 2)
 
-            # 40D7..40ED überspringen:
-            # InvGenEnergy + TotalLoadEnergy + BackupLoadEnergy
-            position += 12  # 12 x UInt32 = 24 Register
+            # ----------------------------------------------------------
+            # NEU: Direktsprung auf 0x4167 (robust, unabhängig vom Code oben)
+            # ----------------------------------------------------------
+            target_offset = 0x4167 - 0x40BF  # = 168 Register
 
-            # 40EF..40F5: SellEnergy (Tag/Monat/Jahr/Gesamt)
-            value, position = self.decode_32bit_uint(registerList, position)
-            data["dailygridexportenergy"] = round(value * 0.01, 2)
-            value, position = self.decode_32bit_uint(registerList, position)
-            data["monthgridexportenergy"] = round(value * 0.01, 2)
-            value, position = self.decode_32bit_uint(registerList, position)
-            data["yeargridexportenergy"] = round(value * 0.01, 2)
-            value, position = self.decode_32bit_uint(registerList, position)
-            data["totalgridexportenergy"] = round(value * 0.01, 2)
+            if position < target_offset:
+                position = target_offset
 
-            # 40F7..40FD: FeedInEnergy (Tag/Monat/Jahr/Gesamt)
+            # ----------------------------------------------------------
+            # Sum FeedIn = Netzbezug (IMPORT)
+            # ----------------------------------------------------------
             value, position = self.decode_32bit_uint(registerList, position)
             data["dailygridimportenergy"] = round(value * 0.01, 2)
+
             value, position = self.decode_32bit_uint(registerList, position)
             data["monthgridimportenergy"] = round(value * 0.01, 2)
+
             value, position = self.decode_32bit_uint(registerList, position)
             data["yeargridimportenergy"] = round(value * 0.01, 2)
+
             value, position = self.decode_32bit_uint(registerList, position)
             data["totalgridimportenergy"] = round(value * 0.01, 2)
 
+            # ----------------------------------------------------------
+            # Sum Sell = Netzeinspeisung (EXPORT)
+            # ----------------------------------------------------------
+            value, position = self.decode_32bit_uint(registerList, position)
+            data["dailygridexportenergy"] = round(value * 0.01, 2)
+
+            value, position = self.decode_32bit_uint(registerList, position)
+            data["monthgridexportenergy"] = round(value * 0.01, 2)
+
+            value, position = self.decode_32bit_uint(registerList, position)
+            data["yeargridexportenergy"] = round(value * 0.01, 2)
+
+            value, position = self.decode_32bit_uint(registerList, position)
+            data["totalgridexportenergy"] = round(value * 0.01, 2)
+
             return data
-    
+
         except Exception as e:
             _LOGGER.error(f"Error reading inverter data: {e}")
             return {}
