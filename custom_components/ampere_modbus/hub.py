@@ -53,6 +53,7 @@ class AmpereStorageProModbusHub(DataUpdateCoordinator[dict]):
         self._inverter_data: dict = {}
         self.data: dict = {}
         self._suspend_until: float = 0.0
+        self._last_good_grid_ac_data: dict = {}
 
     def _create_client(self) -> AsyncModbusTcpClient:
         """Create a new client instance."""
@@ -574,31 +575,86 @@ class AmpereStorageProModbusHub(DataUpdateCoordinator[dict]):
 
     async def read_modbus_grid_ac_data(self) -> dict:
         """
-        Reads AC grid data.
+        Reads AC grid data and suppresses short invalid zero/implausible readings.
 
         Register block: 0x4031 .. 0x403F (15 registers)
         - 0x4031: RGridVolt, scale 0.1 V
         - 0x4033: RGridFreq, scale 0.01 Hz
         - 0x4038: SGridVolt, scale 0.1 V
         - 0x403F: TGridVolt, scale 0.1 V
+
+        Some SAJ devices occasionally return invalid zero values for grid AC data
+        during an internal refresh/rollover. In that case, the last plausible values
+        are kept to avoid polluting Home Assistant statistics.
         """
         try:
             register_list = await self.read_holding_registers(self._unit, 0x4031, 15)
 
-            data = {}
+            r_v_raw = register_list[0]    # 0x4031
+            r_f_raw = register_list[2]    # 0x4033
+            s_v_raw = register_list[7]    # 0x4038
+            t_v_raw = register_list[14]   # 0x403F
 
-            r_v_raw = register_list[0]
-            r_f_raw = register_list[2]
-            s_v_raw = register_list[7]
-            t_v_raw = register_list[14]
+            grid_voltage_l1 = round(r_v_raw * 0.1, 1)
+            grid_voltage_l2 = round(s_v_raw * 0.1, 1)
+            grid_voltage_l3 = round(t_v_raw * 0.1, 1)
+            grid_frequency = round(r_f_raw * 0.01, 2)
 
-            data["grid_voltage_l1"] = round(r_v_raw * 0.1, 1)
-            data["grid_voltage_l2"] = round(s_v_raw * 0.1, 1)
-            data["grid_voltage_l3"] = round(t_v_raw * 0.1, 1)
-            data["grid_frequency"] = round(r_f_raw * 0.01, 2)
+            # Plausibility checks for normal LV grid operation
+            freq_valid = 45.0 <= grid_frequency <= 55.0
+            v1_valid = 100.0 <= grid_voltage_l1 <= 300.0
+            v2_valid = 100.0 <= grid_voltage_l2 <= 300.0
+            v3_valid = 100.0 <= grid_voltage_l3 <= 300.0
 
-            return data
+            all_zero = (
+                grid_frequency == 0.0
+                and grid_voltage_l1 == 0.0
+                and grid_voltage_l2 == 0.0
+                and grid_voltage_l3 == 0.0
+            )
+
+            all_valid = freq_valid and v1_valid and v2_valid and v3_valid
+
+            if all_valid:
+                data = {
+                    "grid_voltage_l1": grid_voltage_l1,
+                    "grid_voltage_l2": grid_voltage_l2,
+                    "grid_voltage_l3": grid_voltage_l3,
+                    "grid_frequency": grid_frequency,
+                }
+                self._last_good_grid_ac_data = dict(data)
+                return data
+
+            if self._last_good_grid_ac_data:
+                if all_zero:
+                    _LOGGER.warning(
+                        "Ignoring temporary zero grid AC reading from inverter "
+                        "(likely internal refresh/rollover). Keeping last valid values."
+                    )
+                else:
+                    _LOGGER.warning(
+                        "Ignoring implausible grid AC reading: "
+                        "L1=%s V, L2=%s V, L3=%s V, f=%s Hz. "
+                        "Keeping last valid values.",
+                        grid_voltage_l1,
+                        grid_voltage_l2,
+                        grid_voltage_l3,
+                        grid_frequency,
+                    )
+                return dict(self._last_good_grid_ac_data)
+
+            _LOGGER.warning(
+                "Grid AC reading invalid and no cached valid values available: "
+                "L1=%s V, L2=%s V, L3=%s V, f=%s Hz",
+                grid_voltage_l1,
+                grid_voltage_l2,
+                grid_voltage_l3,
+                grid_frequency,
+            )
+            return {}
 
         except Exception as e:
             _LOGGER.error("Error reading AC grid data: %s", e, exc_info=True)
+            if self._last_good_grid_ac_data:
+                return dict(self._last_good_grid_ac_data)
             raise
