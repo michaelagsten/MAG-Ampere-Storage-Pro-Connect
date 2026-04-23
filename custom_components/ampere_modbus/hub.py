@@ -420,7 +420,10 @@ class AmpereStorageProModbusHub(DataUpdateCoordinator[dict]):
             data = {}
 
             value, position = self.decode_16bit_uint(register_list, position)
+            data["devicestatus_raw"] = value
             data["devicestatus"] = DEVICE_STATUSSES.get(value, "Unknown")
+            data["island_mode"] = value == 3
+            data["grid_mode"] = value == 4
 
             fault1, position = self.decode_32bit_uint(register_list, position)
             fault2, position = self.decode_32bit_uint(register_list, position)
