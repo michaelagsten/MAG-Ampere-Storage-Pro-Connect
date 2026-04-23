@@ -16,7 +16,7 @@ from .hub import AmpereStorageProModbusHub
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
-    """Set up Ampere Modbus binary sensors from a config entry."""
+    """Set up Ampere Modbus binary sensors from config entry."""
     hub_name = entry.data[CONF_NAME]
     hub = hass.data[DOMAIN][hub_name]["hub"]
 
@@ -26,12 +26,18 @@ async def async_setup_entry(hass, entry, async_add_entities):
         "manufacturer": ATTR_MANUFACTURER,
     }
 
-    entities = [
-        AmpereBinarySensor(hub_name, hub, device_info, description)
-        for description in BINARY_SENSOR_TYPES.values()
-    ]
+    entities = []
+    for description in BINARY_SENSOR_TYPES.values():
+        entities.append(
+            AmpereBinarySensor(
+                hub_name,
+                hub,
+                device_info,
+                description,
+            )
+        )
 
-    async_add_entities(entities)
+    async_add_entities(entities, True)
 
 
 class AmpereBinarySensor(CoordinatorEntity, BinarySensorEntity):
@@ -60,10 +66,9 @@ class AmpereBinarySensor(CoordinatorEntity, BinarySensorEntity):
 
     @property
     def is_on(self) -> Optional[bool]:
-        value = self.coordinator.data.get(self.entity_description.key)
-        if value is None:
+        if self.entity_description.key not in self.coordinator.data:
             return None
-        return bool(value)
+        return bool(self.coordinator.data[self.entity_description.key])
 
 
 @dataclass
