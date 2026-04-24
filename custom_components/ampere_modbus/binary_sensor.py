@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Optional
 
@@ -14,6 +15,8 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import ATTR_MANUFACTURER, DOMAIN
 from .hub import AmpereStorageProModbusHub
 
+_LOGGER = logging.getLogger(__name__)
+
 
 async def async_setup_entry(hass, entry, async_add_entities):
     """Set up Ampere Modbus binary sensors from config entry."""
@@ -26,18 +29,15 @@ async def async_setup_entry(hass, entry, async_add_entities):
         "manufacturer": ATTR_MANUFACTURER,
     }
 
-    entities = []
-    for description in BINARY_SENSOR_TYPES.values():
-        entities.append(
-            AmpereBinarySensor(
-                hub_name,
-                hub,
-                device_info,
-                description,
-            )
-        )
+    entities = [
+        AmpereBinarySensor(hub_name, hub, device_info, description)
+        for description in BINARY_SENSOR_TYPES.values()
+    ]
 
+    _LOGGER.debug("Adding %s Ampere Modbus binary sensors", len(entities))
     async_add_entities(entities, True)
+
+    return True
 
 
 class AmpereBinarySensor(CoordinatorEntity, BinarySensorEntity):
@@ -66,9 +66,18 @@ class AmpereBinarySensor(CoordinatorEntity, BinarySensorEntity):
 
     @property
     def is_on(self) -> Optional[bool]:
-        if self.entity_description.key not in self.coordinator.data:
+        raw_status = self.coordinator.data.get("devicestatus_raw")
+
+        if raw_status is None:
             return None
-        return bool(self.coordinator.data[self.entity_description.key])
+
+        if self.entity_description.key == "island_mode":
+            return raw_status == 3
+
+        if self.entity_description.key == "grid_mode":
+            return raw_status == 4
+
+        return None
 
 
 @dataclass
