@@ -42,6 +42,12 @@ class AmpereStorageProModbusHub(DataUpdateCoordinator[dict]):
     # to avoid observed transaction mixups on weak TCP/RS485 bridges or busy WRs.
     MAX_REGISTERS_PER_READ = 30
 
+    # Battery / BMS peripheral data.
+    # 0xA000..0xA023 contains battery count, capacity, online mask and
+    # SOC/SOH/voltage/current/temperature/cycles for up to 4 battery modules.
+    BATTERY_DATA_START_REGISTER = 0xA000
+    BATTERY_DATA_REGISTER_COUNT = 0x0024
+
     # Short delay between requests. Important when KiwiGrid/other clients also
     # access the inverter and when the inverter's Modbus TCP stack is slow.
     READ_PACING_SECONDS = 0.20
@@ -416,6 +422,13 @@ class AmpereStorageProModbusHub(DataUpdateCoordinator[dict]):
                         "longterm_data", self.read_modbus_longterm_data, all_read_data
                     )
                 )
+                ok_count += int(
+                    await self._run_read_block(
+                        "battery_health_data",
+                        self.read_modbus_battery_health_data,
+                        all_read_data,
+                    )
+                )
 
                 if ok_count == 0 and not all_read_data:
                     raise ConnectionException("All Modbus read blocks failed and no cached data exists.")
@@ -564,6 +577,185 @@ class AmpereStorageProModbusHub(DataUpdateCoordinator[dict]):
 
         position += length
         return str(value), position
+
+    @staticmethod
+    def _is_invalid_register_value(value: Any) -> bool:
+        """Return whether a raw register value should be treated as unavailable."""
+        return value is None or value in (0xFFFF, 0x7FFF)
+
+    @staticmethod
+    def _scale_value(value: Any, factor: float, digits: int) -> Optional[float]:
+        """Scale a raw numeric value and return None for invalid values."""
+        if AmpereStorageProModbusHub._is_invalid_register_value(value):
+            return None
+
+        try:
+            return round(float(value) * factor, digits)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _register_value_at(
+        register_list: List[int],
+        start_address: int,
+        address: int,
+    ) -> Optional[int]:
+        """Return a raw register value by absolute Modbus address."""
+        index = address - start_address
+
+        if index < 0 or index >= len(register_list):
+            return None
+
+        return register_list[index]
+
+    def _decode_uint16_at(
+        self,
+        register_list: List[int],
+        start_address: int,
+        address: int,
+    ) -> Optional[int]:
+        """Decode one UInt16 register by absolute Modbus address."""
+        raw = self._register_value_at(register_list, start_address, address)
+
+        if self._is_invalid_register_value(raw):
+            return None
+
+        try:
+            value = self._convert_from_registers(
+                [raw], ModbusClientMixin.DATATYPE.UINT16
+            )
+            return int(value)
+        except Exception as e:
+            _LOGGER.error("Error decoding UInt16 at address %s: %s", hex(address), e)
+            return None
+
+    def _decode_int16_at(
+        self,
+        register_list: List[int],
+        start_address: int,
+        address: int,
+    ) -> Optional[int]:
+        """Decode one Int16 register by absolute Modbus address."""
+        raw = self._register_value_at(register_list, start_address, address)
+
+        if self._is_invalid_register_value(raw):
+            return None
+
+        try:
+            value = self._convert_from_registers(
+                [raw], ModbusClientMixin.DATATYPE.INT16
+            )
+            return int(value)
+        except Exception as e:
+            _LOGGER.error("Error decoding Int16 at address %s: %s", hex(address), e)
+            return None
+
+    async def read_modbus_battery_health_data(self) -> dict:
+        """Read battery / BMS health data from peripheral device register block.
+
+        Register range:
+        - 0xA000: battery module count
+        - 0xA001: battery capacity [Ah]
+        - 0xA00A: available battery capacity
+        - 0xA00B: battery online mask
+        - 0xA00C..0xA023: SOC, SOH, voltage, current, temperature, cycles
+          for battery modules 1..4
+        """
+        start_address = self.BATTERY_DATA_START_REGISTER
+
+        register_list = await self.read_holding_registers(
+            self._unit,
+            start_address,
+            self.BATTERY_DATA_REGISTER_COUNT,
+        )
+
+        data: dict = {}
+
+        battery_module_count = self._decode_uint16_at(
+            register_list, start_address, 0xA000
+        )
+        battery_capacity_ah = self._decode_uint16_at(
+            register_list, start_address, 0xA001
+        )
+        battery_available_capacity = self._decode_uint16_at(
+            register_list, start_address, 0xA00A
+        )
+        battery_online_mask = self._decode_uint16_at(
+            register_list, start_address, 0xA00B
+        )
+
+        data["battery_module_count"] = battery_module_count
+        data["battery_capacity_ah"] = battery_capacity_ah
+        data["battery_available_capacity"] = battery_available_capacity
+        data["battery_online_mask"] = battery_online_mask
+
+        module_registers = {
+            1: {
+                "soc": 0xA00C,
+                "soh": 0xA00D,
+                "voltage": 0xA00E,
+                "current": 0xA00F,
+                "temperature": 0xA010,
+                "cycles": 0xA011,
+            },
+            2: {
+                "soc": 0xA012,
+                "soh": 0xA013,
+                "voltage": 0xA014,
+                "current": 0xA015,
+                "temperature": 0xA016,
+                "cycles": 0xA017,
+            },
+            3: {
+                "soc": 0xA018,
+                "soh": 0xA019,
+                "voltage": 0xA01A,
+                "current": 0xA01B,
+                "temperature": 0xA01C,
+                "cycles": 0xA01D,
+            },
+            4: {
+                "soc": 0xA01E,
+                "soh": 0xA01F,
+                "voltage": 0xA020,
+                "current": 0xA021,
+                "temperature": 0xA022,
+                "cycles": 0xA023,
+            },
+        }
+
+        for module_id, registers in module_registers.items():
+            soc_raw = self._decode_uint16_at(
+                register_list, start_address, registers["soc"]
+            )
+            soh_raw = self._decode_uint16_at(
+                register_list, start_address, registers["soh"]
+            )
+            voltage_raw = self._decode_uint16_at(
+                register_list, start_address, registers["voltage"]
+            )
+            current_raw = self._decode_int16_at(
+                register_list, start_address, registers["current"]
+            )
+            temperature_raw = self._decode_int16_at(
+                register_list, start_address, registers["temperature"]
+            )
+            cycles_raw = self._decode_uint16_at(
+                register_list, start_address, registers["cycles"]
+            )
+
+            prefix = f"battery_{module_id}"
+
+            data[f"{prefix}_soc"] = self._scale_value(soc_raw, 0.01, 2)
+            data[f"{prefix}_soh"] = self._scale_value(soh_raw, 0.01, 2)
+            data[f"{prefix}_voltage"] = self._scale_value(voltage_raw, 0.1, 1)
+            data[f"{prefix}_current"] = self._scale_value(current_raw, 0.01, 2)
+            data[f"{prefix}_temperature"] = self._scale_value(
+                temperature_raw, 0.1, 1
+            )
+            data[f"{prefix}_cycles"] = cycles_raw
+
+        return data
 
     async def read_modbus_inverter_data(self) -> dict:
         register_list = await self.read_holding_registers(self._unit, 0x8F00, 29)
