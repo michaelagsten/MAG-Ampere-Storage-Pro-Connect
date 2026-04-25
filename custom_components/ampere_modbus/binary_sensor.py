@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 from homeassistant.components.binary_sensor import (
     BinarySensorEntity,
@@ -18,24 +18,40 @@ from .hub import AmpereStorageProModbusHub
 _LOGGER = logging.getLogger(__name__)
 
 
-async def async_setup_entry(hass, entry, async_add_entities):
-    """Set up Ampere Modbus binary sensors from config entry."""
-    hub_name = entry.data[CONF_NAME]
-    hub = hass.data[DOMAIN][hub_name]["hub"]
+async def async_setup_entry(hass, entry, async_add_entities) -> bool:
+    """Set up Ampere Modbus binary sensors from a config entry."""
+    hub_data = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+
+    if not hub_data or "hub" not in hub_data:
+        _LOGGER.error(
+            "Cannot set up binary sensors for %s entry %s: hub data missing.",
+            DOMAIN,
+            entry.entry_id,
+        )
+        return False
+
+    hub: AmpereStorageProModbusHub = hub_data["hub"]
+    hub_name = hub_data.get("name") or entry.data.get(CONF_NAME) or entry.title or DOMAIN
 
     device_info = {
-        "identifiers": {(DOMAIN, hub_name)},
+        "identifiers": {(DOMAIN, entry.entry_id)},
         "name": hub_name,
         "manufacturer": ATTR_MANUFACTURER,
     }
 
-    entities = [
-        AmpereBinarySensor(hub_name, hub, device_info, description)
+    entities: list[AmpereBinarySensor] = [
+        AmpereBinarySensor(
+            entry_id=entry.entry_id,
+            platform_name=hub_name,
+            hub=hub,
+            device_info=device_info,
+            description=description,
+        )
         for description in BINARY_SENSOR_TYPES.values()
     ]
 
     _LOGGER.debug("Adding %s Ampere Modbus binary sensors", len(entities))
-    async_add_entities(entities, True)
+    async_add_entities(entities)
 
     return True
 
@@ -43,44 +59,77 @@ async def async_setup_entry(hass, entry, async_add_entities):
 class AmpereBinarySensor(CoordinatorEntity, BinarySensorEntity):
     """Representation of an Ampere Storage Pro Modbus binary sensor."""
 
+    entity_description: "AmpereModbusBinarySensorEntityDescription"
+
     def __init__(
         self,
+        entry_id: str,
         platform_name: str,
         hub: AmpereStorageProModbusHub,
-        device_info,
-        description: AmpereModbusBinarySensorEntityDescription,
-    ):
+        device_info: dict[str, Any],
+        description: "AmpereModbusBinarySensorEntityDescription",
+    ) -> None:
+        """Initialize the binary sensor."""
+        super().__init__(coordinator=hub)
+
+        self._entry_id = entry_id
         self._platform_name = platform_name
         self._attr_device_info = device_info
         self.entity_description = description
 
-        super().__init__(coordinator=hub)
+        self._attr_name = f"{self._platform_name} {self.entity_description.name}"
+        self._attr_unique_id = f"{DOMAIN}_{self._entry_id}_binary_{self.entity_description.key}"
 
     @property
-    def name(self) -> str:
-        return f"{self._platform_name} {self.entity_description.name}"
-
-    @property
-    def unique_id(self) -> Optional[str]:
-        return f"{self._platform_name}_binary_{self.entity_description.key}"
+    def available(self) -> bool:
+        """Return whether the binary sensor has usable coordinator data."""
+        return bool(
+            self.coordinator.last_update_success
+            and self.coordinator.data
+            and (
+                self.entity_description.key in self.coordinator.data
+                or "devicestatus_raw" in self.coordinator.data
+            )
+        )
 
     @property
     def is_on(self) -> Optional[bool]:
-        raw_status = self.coordinator.data.get("devicestatus_raw")
+        """Return the binary sensor state.
 
-        if raw_status is None:
+        Prefer explicit boolean values from coordinator data. Fall back to the
+        raw device status for compatibility with older hub data.
+        """
+        data = self.coordinator.data or {}
+        key = self.entity_description.key
+
+        explicit_value = data.get(key)
+        if isinstance(explicit_value, bool):
+            return explicit_value
+
+        raw_status = data.get("devicestatus_raw")
+        if raw_status in (None, "", "unknown", "Unknown", "unavailable", "Unavailable"):
             return None
 
-        if self.entity_description.key == "island_mode":
-            return raw_status == 3
+        try:
+            raw_status_int = int(raw_status)
+        except (TypeError, ValueError):
+            _LOGGER.debug(
+                "Ignoring non-integer devicestatus_raw for binary sensor %s: %r",
+                key,
+                raw_status,
+            )
+            return None
 
-        if self.entity_description.key == "grid_mode":
-            return raw_status == 4
+        if key == "island_mode":
+            return raw_status_int == 3
+
+        if key == "grid_mode":
+            return raw_status_int == 4
 
         return None
 
 
-@dataclass
+@dataclass(frozen=True, kw_only=True)
 class AmpereModbusBinarySensorEntityDescription(BinarySensorEntityDescription):
     """Description for Ampere Modbus binary sensor entities."""
 
