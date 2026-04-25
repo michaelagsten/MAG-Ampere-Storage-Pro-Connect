@@ -233,6 +233,10 @@ SENSOR_TYPES: dict[str, AmpereModbusSensorEntityDescription] = {
         entity_registry_enabled_default=False,
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
+
+    # ---------------------------------------------------------------------
+    # Existing realtime battery values from inverter realtime block
+    # ---------------------------------------------------------------------
     "BatteryVoltage": AmpereModbusSensorEntityDescription(
         name="Battery Voltage",
         key="batteryvoltage",
@@ -273,7 +277,9 @@ SENSOR_TYPES: dict[str, AmpereModbusSensorEntityDescription] = {
     ),
 
     # ---------------------------------------------------------------------
-    # Battery / BMS health raw values from peripheral block 0xA000..0xA023
+    # Battery / BMS health raw values from peripheral block 0xA000..0xA011.
+    # The tested SAJ/BMS setup reports the connected storage as one battery
+    # stack. Therefore only the reported stack values are exposed here.
     # ---------------------------------------------------------------------
     "BatteryModuleCount": AmpereModbusSensorEntityDescription(
         name="Battery Module Count",
@@ -306,12 +312,11 @@ SENSOR_TYPES: dict[str, AmpereModbusSensorEntityDescription] = {
         key="battery_online_mask",
         icon="mdi:counter",
         state_class=SensorStateClass.MEASUREMENT,
-        entity_registry_enabled_default=False,
+        entity_registry_enabled_default=True,
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
-
-    "Battery1Soc": AmpereModbusSensorEntityDescription(
-        name="Battery 1 SOC",
+    "BatteryStackSoc": AmpereModbusSensorEntityDescription(
+        name="Battery Stack SOC",
         key="battery_1_soc",
         native_unit_of_measurement=PERCENTAGE,
         device_class=SensorDeviceClass.BATTERY,
@@ -319,8 +324,8 @@ SENSOR_TYPES: dict[str, AmpereModbusSensorEntityDescription] = {
         entity_registry_enabled_default=True,
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
-    "Battery1Soh": AmpereModbusSensorEntityDescription(
-        name="Battery 1 SOH",
+    "BatteryStackSoh": AmpereModbusSensorEntityDescription(
+        name="Battery Stack SOH",
         key="battery_1_soh",
         native_unit_of_measurement=PERCENTAGE,
         icon="mdi:battery-heart-variant",
@@ -328,8 +333,8 @@ SENSOR_TYPES: dict[str, AmpereModbusSensorEntityDescription] = {
         entity_registry_enabled_default=True,
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
-    "Battery1Voltage": AmpereModbusSensorEntityDescription(
-        name="Battery 1 Voltage",
+    "BatteryStackVoltage": AmpereModbusSensorEntityDescription(
+        name="Battery Stack Voltage",
         key="battery_1_voltage",
         native_unit_of_measurement=UnitOfElectricPotential.VOLT,
         device_class=SensorDeviceClass.VOLTAGE,
@@ -337,8 +342,8 @@ SENSOR_TYPES: dict[str, AmpereModbusSensorEntityDescription] = {
         entity_registry_enabled_default=True,
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
-    "Battery1Current": AmpereModbusSensorEntityDescription(
-        name="Battery 1 Current",
+    "BatteryStackCurrent": AmpereModbusSensorEntityDescription(
+        name="Battery Stack Current",
         key="battery_1_current",
         native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
         device_class=SensorDeviceClass.CURRENT,
@@ -346,8 +351,8 @@ SENSOR_TYPES: dict[str, AmpereModbusSensorEntityDescription] = {
         entity_registry_enabled_default=True,
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
-    "Battery1Temperature": AmpereModbusSensorEntityDescription(
-        name="Battery 1 Temperature",
+    "BatteryStackTemperature": AmpereModbusSensorEntityDescription(
+        name="Battery Stack Temperature",
         key="battery_1_temperature",
         native_unit_of_measurement=UnitOfTemperature.CELSIUS,
         device_class=SensorDeviceClass.TEMPERATURE,
@@ -355,8 +360,8 @@ SENSOR_TYPES: dict[str, AmpereModbusSensorEntityDescription] = {
         entity_registry_enabled_default=True,
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
-    "Battery1Cycles": AmpereModbusSensorEntityDescription(
-        name="Battery 1 Cycles",
+    "BatteryStackCycles": AmpereModbusSensorEntityDescription(
+        name="Battery Stack Cycles",
         key="battery_1_cycles",
         icon="mdi:counter",
         state_class=SensorStateClass.MEASUREMENT,
@@ -364,168 +369,9 @@ SENSOR_TYPES: dict[str, AmpereModbusSensorEntityDescription] = {
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
 
-    "Battery2Soc": AmpereModbusSensorEntityDescription(
-        name="Battery 2 SOC",
-        key="battery_2_soc",
-        native_unit_of_measurement=PERCENTAGE,
-        device_class=SensorDeviceClass.BATTERY,
-        state_class=SensorStateClass.MEASUREMENT,
-        entity_registry_enabled_default=True,
-        entity_category=EntityCategory.DIAGNOSTIC,
-    ),
-    "Battery2Soh": AmpereModbusSensorEntityDescription(
-        name="Battery 2 SOH",
-        key="battery_2_soh",
-        native_unit_of_measurement=PERCENTAGE,
-        icon="mdi:battery-heart-variant",
-        state_class=SensorStateClass.MEASUREMENT,
-        entity_registry_enabled_default=True,
-        entity_category=EntityCategory.DIAGNOSTIC,
-    ),
-    "Battery2Voltage": AmpereModbusSensorEntityDescription(
-        name="Battery 2 Voltage",
-        key="battery_2_voltage",
-        native_unit_of_measurement=UnitOfElectricPotential.VOLT,
-        device_class=SensorDeviceClass.VOLTAGE,
-        state_class=SensorStateClass.MEASUREMENT,
-        entity_registry_enabled_default=True,
-        entity_category=EntityCategory.DIAGNOSTIC,
-    ),
-    "Battery2Current": AmpereModbusSensorEntityDescription(
-        name="Battery 2 Current",
-        key="battery_2_current",
-        native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
-        device_class=SensorDeviceClass.CURRENT,
-        state_class=SensorStateClass.MEASUREMENT,
-        entity_registry_enabled_default=True,
-        entity_category=EntityCategory.DIAGNOSTIC,
-    ),
-    "Battery2Temperature": AmpereModbusSensorEntityDescription(
-        name="Battery 2 Temperature",
-        key="battery_2_temperature",
-        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
-        device_class=SensorDeviceClass.TEMPERATURE,
-        state_class=SensorStateClass.MEASUREMENT,
-        entity_registry_enabled_default=True,
-        entity_category=EntityCategory.DIAGNOSTIC,
-    ),
-    "Battery2Cycles": AmpereModbusSensorEntityDescription(
-        name="Battery 2 Cycles",
-        key="battery_2_cycles",
-        icon="mdi:counter",
-        state_class=SensorStateClass.MEASUREMENT,
-        entity_registry_enabled_default=True,
-        entity_category=EntityCategory.DIAGNOSTIC,
-    ),
-
-    "Battery3Soc": AmpereModbusSensorEntityDescription(
-        name="Battery 3 SOC",
-        key="battery_3_soc",
-        native_unit_of_measurement=PERCENTAGE,
-        device_class=SensorDeviceClass.BATTERY,
-        state_class=SensorStateClass.MEASUREMENT,
-        entity_registry_enabled_default=False,
-        entity_category=EntityCategory.DIAGNOSTIC,
-    ),
-    "Battery3Soh": AmpereModbusSensorEntityDescription(
-        name="Battery 3 SOH",
-        key="battery_3_soh",
-        native_unit_of_measurement=PERCENTAGE,
-        icon="mdi:battery-heart-variant",
-        state_class=SensorStateClass.MEASUREMENT,
-        entity_registry_enabled_default=False,
-        entity_category=EntityCategory.DIAGNOSTIC,
-    ),
-    "Battery3Voltage": AmpereModbusSensorEntityDescription(
-        name="Battery 3 Voltage",
-        key="battery_3_voltage",
-        native_unit_of_measurement=UnitOfElectricPotential.VOLT,
-        device_class=SensorDeviceClass.VOLTAGE,
-        state_class=SensorStateClass.MEASUREMENT,
-        entity_registry_enabled_default=False,
-        entity_category=EntityCategory.DIAGNOSTIC,
-    ),
-    "Battery3Current": AmpereModbusSensorEntityDescription(
-        name="Battery 3 Current",
-        key="battery_3_current",
-        native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
-        device_class=SensorDeviceClass.CURRENT,
-        state_class=SensorStateClass.MEASUREMENT,
-        entity_registry_enabled_default=False,
-        entity_category=EntityCategory.DIAGNOSTIC,
-    ),
-    "Battery3Temperature": AmpereModbusSensorEntityDescription(
-        name="Battery 3 Temperature",
-        key="battery_3_temperature",
-        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
-        device_class=SensorDeviceClass.TEMPERATURE,
-        state_class=SensorStateClass.MEASUREMENT,
-        entity_registry_enabled_default=False,
-        entity_category=EntityCategory.DIAGNOSTIC,
-    ),
-    "Battery3Cycles": AmpereModbusSensorEntityDescription(
-        name="Battery 3 Cycles",
-        key="battery_3_cycles",
-        icon="mdi:counter",
-        state_class=SensorStateClass.MEASUREMENT,
-        entity_registry_enabled_default=False,
-        entity_category=EntityCategory.DIAGNOSTIC,
-    ),
-
-    "Battery4Soc": AmpereModbusSensorEntityDescription(
-        name="Battery 4 SOC",
-        key="battery_4_soc",
-        native_unit_of_measurement=PERCENTAGE,
-        device_class=SensorDeviceClass.BATTERY,
-        state_class=SensorStateClass.MEASUREMENT,
-        entity_registry_enabled_default=False,
-        entity_category=EntityCategory.DIAGNOSTIC,
-    ),
-    "Battery4Soh": AmpereModbusSensorEntityDescription(
-        name="Battery 4 SOH",
-        key="battery_4_soh",
-        native_unit_of_measurement=PERCENTAGE,
-        icon="mdi:battery-heart-variant",
-        state_class=SensorStateClass.MEASUREMENT,
-        entity_registry_enabled_default=False,
-        entity_category=EntityCategory.DIAGNOSTIC,
-    ),
-    "Battery4Voltage": AmpereModbusSensorEntityDescription(
-        name="Battery 4 Voltage",
-        key="battery_4_voltage",
-        native_unit_of_measurement=UnitOfElectricPotential.VOLT,
-        device_class=SensorDeviceClass.VOLTAGE,
-        state_class=SensorStateClass.MEASUREMENT,
-        entity_registry_enabled_default=False,
-        entity_category=EntityCategory.DIAGNOSTIC,
-    ),
-    "Battery4Current": AmpereModbusSensorEntityDescription(
-        name="Battery 4 Current",
-        key="battery_4_current",
-        native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
-        device_class=SensorDeviceClass.CURRENT,
-        state_class=SensorStateClass.MEASUREMENT,
-        entity_registry_enabled_default=False,
-        entity_category=EntityCategory.DIAGNOSTIC,
-    ),
-    "Battery4Temperature": AmpereModbusSensorEntityDescription(
-        name="Battery 4 Temperature",
-        key="battery_4_temperature",
-        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
-        device_class=SensorDeviceClass.TEMPERATURE,
-        state_class=SensorStateClass.MEASUREMENT,
-        entity_registry_enabled_default=False,
-        entity_category=EntityCategory.DIAGNOSTIC,
-    ),
-    "Battery4Cycles": AmpereModbusSensorEntityDescription(
-        name="Battery 4 Cycles",
-        key="battery_4_cycles",
-        icon="mdi:counter",
-        state_class=SensorStateClass.MEASUREMENT,
-        entity_registry_enabled_default=False,
-        entity_category=EntityCategory.DIAGNOSTIC,
-    ),
-
+    # ---------------------------------------------------------------------
+    # PV and power values
+    # ---------------------------------------------------------------------
     "PV1Volt": AmpereModbusSensorEntityDescription(
         name="PV1 Voltage",
         key="pv1volt",
@@ -589,6 +435,10 @@ SENSOR_TYPES: dict[str, AmpereModbusSensorEntityDescription] = {
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
     ),
+
+    # ---------------------------------------------------------------------
+    # Energy counters
+    # ---------------------------------------------------------------------
     "DailyPvGeneration": AmpereModbusSensorEntityDescription(
         name="Daily PV Generation",
         key="dailypvgeneration",
@@ -683,6 +533,10 @@ SENSOR_TYPES: dict[str, AmpereModbusSensorEntityDescription] = {
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
     ),
+
+    # ---------------------------------------------------------------------
+    # Flow and status values
+    # ---------------------------------------------------------------------
     "PvFlowText": AmpereModbusSensorEntityDescription(
         name="PV Flow Text",
         key="pvflowtext",
@@ -740,6 +594,10 @@ SENSOR_TYPES: dict[str, AmpereModbusSensorEntityDescription] = {
         entity_registry_enabled_default=True,
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
+
+    # ---------------------------------------------------------------------
+    # Grid AC values
+    # ---------------------------------------------------------------------
     "GridVoltageL1": AmpereModbusSensorEntityDescription(
         name="Grid Voltage L1",
         key="grid_voltage_l1",
@@ -772,6 +630,10 @@ SENSOR_TYPES: dict[str, AmpereModbusSensorEntityDescription] = {
         state_class=SensorStateClass.MEASUREMENT,
         entity_registry_enabled_default=True,
     ),
+
+    # ---------------------------------------------------------------------
+    # Grid energy counters
+    # ---------------------------------------------------------------------
     "DailyGridImportEnergy": AmpereModbusSensorEntityDescription(
         name="Daily Grid Import Energy",
         key="dailygridimportenergy",
