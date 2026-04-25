@@ -1,6 +1,6 @@
 {
   "domain": "ampere_modbus",
-  "name": "Ampere.StoragePro",
+  "name": "MAG-Ampere-Storage-Pro-Connect",
   "codeowners": [
     "@michaelagsten"
   ],
@@ -13,5 +13,5 @@
   "requirements": [
     "pymodbus>=3.6.9"
   ],
-  "version": "0.3.2"
+  "version": "1.3"
 }
