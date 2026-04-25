@@ -1,55 +1,65 @@
 from __future__ import annotations
+
+import logging
 from dataclasses import dataclass
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from typing import Any, Optional
+
 from homeassistant.components.sensor import (
-    SensorEntity,
-    SensorDeviceClass,
-    SensorStateClass,
-    SensorEntityDescription,
     EntityCategory,
+    SensorDeviceClass,
+    SensorEntity,
+    SensorEntityDescription,
+    SensorStateClass,
 )
 from homeassistant.const import (
+    CONF_NAME,
+    PERCENTAGE,
     UnitOfElectricCurrent,
     UnitOfElectricPotential,
     UnitOfEnergy,
+    UnitOfFrequency,
     UnitOfPower,
     UnitOfTemperature,
-    UnitOfFrequency,
-    PERCENTAGE,
 )
-import logging
-from typing import Optional
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from homeassistant.const import CONF_NAME
-
-from .const import (
-    ATTR_MANUFACTURER,
-    DOMAIN,
-)
+from .const import ATTR_MANUFACTURER, DOMAIN
 from .hub import AmpereStorageProModbusHub
 
 _LOGGER = logging.getLogger(__name__)
 
 
-async def async_setup_entry(hass, entry, async_add_entities):
-    hub_name = entry.data[CONF_NAME]
-    hub = hass.data[DOMAIN][hub_name]["hub"]
+async def async_setup_entry(hass, entry, async_add_entities) -> bool:
+    """Set up Ampere Modbus sensors for one config entry."""
+    hub_data = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+
+    if not hub_data or "hub" not in hub_data:
+        _LOGGER.error(
+            "Cannot set up sensors for %s entry %s: hub data missing.",
+            DOMAIN,
+            entry.entry_id,
+        )
+        return False
+
+    hub: AmpereStorageProModbusHub = hub_data["hub"]
+    hub_name = hub_data.get("name") or entry.data.get(CONF_NAME) or entry.title or DOMAIN
 
     device_info = {
-        "identifiers": {(DOMAIN, hub_name)},
+        "identifiers": {(DOMAIN, entry.entry_id)},
         "name": hub_name,
         "manufacturer": ATTR_MANUFACTURER,
     }
 
-    entities = []
-    for sensor_description in SENSOR_TYPES.values():
-        sensor = AmpereSensor(
-            hub_name,
-            hub,
-            device_info,
-            sensor_description,
+    entities: list[AmpereSensor] = [
+        AmpereSensor(
+            entry_id=entry.entry_id,
+            platform_name=hub_name,
+            hub=hub,
+            device_info=device_info,
+            description=sensor_description,
         )
-        entities.append(sensor)
+        for sensor_description in SENSOR_TYPES.values()
+    ]
 
     async_add_entities(entities)
     return True
@@ -58,40 +68,89 @@ async def async_setup_entry(hass, entry, async_add_entities):
 class AmpereSensor(CoordinatorEntity, SensorEntity):
     """Representation of an Ampere Storage Pro Modbus sensor."""
 
+    entity_description: "AmpereModbusSensorEntityDescription"
+
     def __init__(
         self,
+        entry_id: str,
         platform_name: str,
         hub: AmpereStorageProModbusHub,
-        device_info,
-        description: AmpereModbusSensorEntityDescription,
-    ):
+        device_info: dict[str, Any],
+        description: "AmpereModbusSensorEntityDescription",
+    ) -> None:
         """Initialize the sensor."""
-        self._platform_name = platform_name
-        self._attr_device_info = device_info
-        self.entity_description: AmpereModbusSensorEntityDescription = description
-
         super().__init__(coordinator=hub)
 
-    @property
-    def name(self):
-        """Return the name."""
-        return f"{self._platform_name} {self.entity_description.name}"
+        self._entry_id = entry_id
+        self._platform_name = platform_name
+        self._attr_device_info = device_info
+        self.entity_description = description
+
+        self._attr_name = f"{self._platform_name} {self.entity_description.name}"
+        self._attr_unique_id = f"{DOMAIN}_{self._entry_id}_{self.entity_description.key}"
 
     @property
-    def unique_id(self) -> Optional[str]:
-        return f"{self._platform_name}_{self.entity_description.key}"
+    def available(self) -> bool:
+        """Return whether the sensor currently has usable coordinator data."""
+        return bool(self.coordinator.last_update_success and self.coordinator.data)
 
     @property
     def native_value(self):
-        """Return the state of the sensor."""
-        return (
-            self.coordinator.data[self.entity_description.key]
-            if self.entity_description.key in self.coordinator.data
-            else None
+        """Return the state of the sensor.
+
+        Keep numeric sensors numeric. Invalid or missing values are returned as
+        None, which Home Assistant represents safely as unavailable/unknown
+        without violating number sensor validation.
+        """
+        data = self.coordinator.data or {}
+        key = self.entity_description.key
+
+        if key not in data:
+            return None
+
+        value = data.get(key)
+
+        if value in (None, "", "unknown", "Unknown", "unavailable", "Unavailable"):
+            return None
+
+        if self._expects_number:
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                _LOGGER.debug(
+                    "Ignoring non-numeric value for numeric sensor %s: %r",
+                    self.entity_description.key,
+                    value,
+                )
+                return None
+
+        return value
+
+    @property
+    def _expects_number(self) -> bool:
+        """Return True if HA expects this sensor to expose a numeric value."""
+        return bool(
+            self.entity_description.native_unit_of_measurement
+            or self.entity_description.device_class
+            in {
+                SensorDeviceClass.BATTERY,
+                SensorDeviceClass.CURRENT,
+                SensorDeviceClass.ENERGY,
+                SensorDeviceClass.FREQUENCY,
+                SensorDeviceClass.POWER,
+                SensorDeviceClass.TEMPERATURE,
+                SensorDeviceClass.VOLTAGE,
+            }
+            or self.entity_description.state_class
+            in {
+                SensorStateClass.MEASUREMENT,
+                SensorStateClass.TOTAL,
+                SensorStateClass.TOTAL_INCREASING,
+            }
         )
 
 
-@dataclass
+@dataclass(frozen=True, kw_only=True)
 class AmpereModbusSensorEntityDescription(SensorEntityDescription):
     """Description for Ampere Modbus sensor entities."""
 
