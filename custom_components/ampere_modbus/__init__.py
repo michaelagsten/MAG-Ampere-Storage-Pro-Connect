@@ -79,7 +79,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await hub.async_config_entry_first_refresh()
     except Exception as err:
         await _async_shutdown_hub(hub)
-        hass.data[DOMAIN].pop(entry.entry_id, None)
+        _remove_entry_data(hass, entry)
+
         _LOGGER.warning(
             "Initial refresh failed for %s entry '%s' at %s:%s. Entry will be retried.",
             DOMAIN,
@@ -96,7 +97,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     except Exception:
         await _async_shutdown_hub(hub)
-        hass.data[DOMAIN].pop(entry.entry_id, None)
+        _remove_entry_data(hass, entry)
+
         _LOGGER.exception(
             "Failed to set up platforms for %s entry '%s'.", DOMAIN, name
         )
@@ -117,11 +119,7 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload an Ampere Storage Pro Modbus config entry."""
-    hub_data = hass.data.get(DOMAIN, {}).get(entry.entry_id)
-    hub: AmpereStorageProModbusHub | None = None
-
-    if hub_data:
-        hub = hub_data.get("hub")
+    hub = _get_hub(hass, entry)
 
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
@@ -136,16 +134,60 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if hub:
         await _async_shutdown_hub(hub)
 
+    _remove_entry_data(hass, entry)
+
+    return True
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Handle removal of an Ampere Storage Pro Modbus config entry.
+
+    This is called when the config entry is removed from Home Assistant.
+    It makes sure that the Modbus hub is shut down and stale runtime data is
+    removed from hass.data.
+    """
+    hub = _get_hub(hass, entry)
+
+    if hub:
+        await _async_shutdown_hub(hub)
+
+    _remove_entry_data(hass, entry)
+
+    _LOGGER.debug(
+        "Removed %s config entry '%s'.",
+        DOMAIN,
+        entry.title or entry.data.get(CONF_NAME, DEFAULT_NAME),
+    )
+
+
+def _get_hub(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+) -> AmpereStorageProModbusHub | None:
+    """Return the hub for a config entry, if available."""
+    hub_data = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+
+    if not hub_data:
+        return None
+
+    hub = hub_data.get("hub")
+
+    if isinstance(hub, AmpereStorageProModbusHub):
+        return hub
+
+    return None
+
+
+def _remove_entry_data(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Remove runtime data for one config entry and clean empty domain data."""
     hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
 
     if not hass.data.get(DOMAIN):
         hass.data.pop(DOMAIN, None)
 
-    return True
-
 
 async def _async_shutdown_hub(hub: AmpereStorageProModbusHub) -> None:
-    """Shutdown the hub safely during setup failure or unload."""
+    """Shutdown the hub safely during setup failure, unload or removal."""
     try:
         shutdown = getattr(hub, "async_shutdown", None)
         if shutdown:
