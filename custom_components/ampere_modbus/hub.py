@@ -828,84 +828,102 @@ class AmpereStorageProModbusHub(DataUpdateCoordinator[dict]):
         return data
 
     async def read_modbus_realtime_data(self) -> dict:
-        register_list = await self.read_holding_registers(self._unit, 0x4069, 60)
-        position = 0
+        """Read realtime battery, PV and power-flow data.
+
+        The realtime register area contains model-dependent gaps/reserved
+        addresses. Reading one large contiguous block from 0x4069 to 0x40A4 can
+        fail on some SAJ H2 devices, especially around 0x4087. Therefore this
+        method reads two smaller stable blocks:
+        - 0x4069..0x4079: battery and PV values
+        - 0x4095..0x40A7: flow directions and power values
+        """
         data = {}
 
-        value, position = self.decode_16bit_uint(register_list, position)
+        # ------------------------------------------------------------------
+        # Block 1: Battery and PV values
+        # 0x4069..0x4079
+        # ------------------------------------------------------------------
+        battery_pv_registers = await self.read_holding_registers(
+            self._unit,
+            0x4069,
+            17,
+        )
+
+        position = 0
+
+        value, position = self.decode_16bit_uint(battery_pv_registers, position)
         data["batteryvoltage"] = round(value * 0.1, 1)
 
-        value, position = self.decode_16bit_int(register_list, position)
+        value, position = self.decode_16bit_int(battery_pv_registers, position)
         data["batterycurrent"] = round(value * 0.01, 2)
 
+        # 0x406B BatCurr1, 0x406C BatCurr2
         position += 2
 
-        value, position = self.decode_16bit_int(register_list, position)
+        value, position = self.decode_16bit_int(battery_pv_registers, position)
         data["batterypower"] = round(value * 1, 0)
 
-        value, position = self.decode_16bit_int(register_list, position)
+        value, position = self.decode_16bit_int(battery_pv_registers, position)
         data["batterytemperature"] = round(value * 0.1, 0)
 
-        value, position = self.decode_16bit_uint(register_list, position)
+        value, position = self.decode_16bit_uint(battery_pv_registers, position)
         data["batterypercent"] = round(value * 0.01, 0)
 
+        # 0x4070 reserved
         position += 1
 
-        value, position = self.decode_16bit_uint(register_list, position)
+        value, position = self.decode_16bit_uint(battery_pv_registers, position)
         data["pv1volt"] = round(value * 0.1, 1)
 
-        value, position = self.decode_16bit_uint(register_list, position)
+        value, position = self.decode_16bit_uint(battery_pv_registers, position)
         data["pv1curr"] = round(value * 0.01, 2)
 
-        pv1power, position = self.decode_16bit_uint(register_list, position)
+        pv1power, position = self.decode_16bit_uint(battery_pv_registers, position)
         data["pv1power"] = round(pv1power * 1, 0)
 
-        value, position = self.decode_16bit_uint(register_list, position)
+        value, position = self.decode_16bit_uint(battery_pv_registers, position)
         data["pv2volt"] = round(value * 0.1, 1)
 
-        value, position = self.decode_16bit_uint(register_list, position)
+        value, position = self.decode_16bit_uint(battery_pv_registers, position)
         data["pv2curr"] = round(value * 0.01, 2)
 
-        pv2power, position = self.decode_16bit_uint(register_list, position)
+        pv2power, position = self.decode_16bit_uint(battery_pv_registers, position)
         data["pv2power"] = round(pv2power * 1, 0)
 
+        # Keep existing behavior: total PV power is calculated from PV1 + PV2.
         data["totalpvpower"] = round(pv1power * 1, 0) + round(pv2power * 1, 0)
 
-        position += 6
-        position += 16
+        # ------------------------------------------------------------------
+        # Block 2: Flow directions and CT / total power values
+        # 0x4095..0x40A7
+        # ------------------------------------------------------------------
+        flow_registers = await self.read_holding_registers(
+            self._unit,
+            0x4095,
+            19,
+        )
 
-        position += 1
-        position += 1
-        position += 1
-        position += 1
-        position += 1
-        position += 1
-        position += 1
-        position += 1
+        position = 0
 
-        value, position = self.decode_16bit_int(register_list, position)
+        value, position = self.decode_16bit_int(flow_registers, position)
         data["pvflow"] = value
         data["pvflowtext"] = PV_DIRECTION.get(value, "Unknown")
 
-        value, position = self.decode_16bit_int(register_list, position)
+        value, position = self.decode_16bit_int(flow_registers, position)
         data["batteryflow"] = value
         data["batteryflowtext"] = BATTERY_DIRECTION.get(value, "Unknown")
 
-        value, position = self.decode_16bit_int(register_list, position)
+        value, position = self.decode_16bit_int(flow_registers, position)
         data["gridflow"] = value
         data["gridflowtext"] = GRID_DIRECTION.get(value, "Unknown")
 
-        position += 1
-        position += 7
+        # 0x4098 Output_direction
+        # 0x4099..0x409F reserved / model-dependent
+        # 0x40A0 SysTotalLoadWatt
+        position += 9
 
-        position += 1
-
-        value, position = self.decode_16bit_int(register_list, position)
+        value, position = self.decode_16bit_int(flow_registers, position)
         data["gridpower"] = value
-
-        position += 1
-        position += 1
-        position += 1
 
         return data
 
