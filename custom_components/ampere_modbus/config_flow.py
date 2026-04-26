@@ -17,26 +17,29 @@ from .const import (
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_UNIT,
     DOMAIN,
+    CONF_BATTERY_NOMINAL_CAPACITY_KWH,
+    CONF_PV_NOMINAL_POWER_KW,
+    CONF_INVERTER_NOMINAL_POWER_KW,
+    CONF_PV_FEED_IN_LIMIT_PERCENT,
+    CONF_BASE_LOAD_W,
+    CONF_FLEXIBLE_LOAD_AVAILABLE_W,
+    CONF_MAX_STORAGE_CHARGE_POWER_W,
+    CONF_CLIPPING_SAFETY_RESERVE_W,
+    DEFAULT_BATTERY_NOMINAL_CAPACITY_KWH,
+    DEFAULT_PV_NOMINAL_POWER_KW,
+    DEFAULT_INVERTER_NOMINAL_POWER_KW,
+    DEFAULT_PV_FEED_IN_LIMIT_PERCENT,
+    DEFAULT_BASE_LOAD_W,
+    DEFAULT_FLEXIBLE_LOAD_AVAILABLE_W,
+    DEFAULT_MAX_STORAGE_CHARGE_POWER_W,
+    DEFAULT_CLIPPING_SAFETY_RESERVE_W,
 )
-
-# System rating configuration keys.
-# These can later be moved to const.py if preferred.
-CONF_BATTERY_NOMINAL_CAPACITY_KWH = "battery_nominal_capacity_kwh"
-CONF_PV_NOMINAL_POWER_KW = "pv_nominal_power_kw"
-CONF_INVERTER_NOMINAL_POWER_KW = "inverter_nominal_power_kw"
-
-DEFAULT_BATTERY_NOMINAL_CAPACITY_KWH = 0.0
-DEFAULT_PV_NOMINAL_POWER_KW = 0.0
-DEFAULT_INVERTER_NOMINAL_POWER_KW = 0.0
 
 
 def _default_for_required_string(
     defaults: dict[str, Any], key: str, fallback: str | None = None
 ) -> str | type[vol.UNDEFINED]:
-    """Return a valid default for a required string field.
-
-    Voluptuous must not receive None as default for required string fields.
-    """
+    """Return a valid default for a required string field."""
     value = defaults.get(key, fallback)
     if value is None:
         return vol.UNDEFINED
@@ -69,6 +72,8 @@ def _data_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
                 CONF_SCAN_INTERVAL,
                 default=defaults.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
             ): cv.positive_int,
+
+            # Technical system parameters
             vol.Optional(
                 CONF_BATTERY_NOMINAL_CAPACITY_KWH,
                 default=defaults.get(
@@ -88,6 +93,41 @@ def _data_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
                 default=defaults.get(
                     CONF_INVERTER_NOMINAL_POWER_KW,
                     DEFAULT_INVERTER_NOMINAL_POWER_KW,
+                ),
+            ): vol.All(vol.Coerce(float), vol.Range(min=0)),
+            vol.Optional(
+                CONF_PV_FEED_IN_LIMIT_PERCENT,
+                default=defaults.get(
+                    CONF_PV_FEED_IN_LIMIT_PERCENT,
+                    DEFAULT_PV_FEED_IN_LIMIT_PERCENT,
+                ),
+            ): vol.All(vol.Coerce(float), vol.Range(min=0, max=100)),
+            vol.Optional(
+                CONF_BASE_LOAD_W,
+                default=defaults.get(
+                    CONF_BASE_LOAD_W,
+                    DEFAULT_BASE_LOAD_W,
+                ),
+            ): vol.All(vol.Coerce(float), vol.Range(min=0)),
+            vol.Optional(
+                CONF_FLEXIBLE_LOAD_AVAILABLE_W,
+                default=defaults.get(
+                    CONF_FLEXIBLE_LOAD_AVAILABLE_W,
+                    DEFAULT_FLEXIBLE_LOAD_AVAILABLE_W,
+                ),
+            ): vol.All(vol.Coerce(float), vol.Range(min=0)),
+            vol.Optional(
+                CONF_MAX_STORAGE_CHARGE_POWER_W,
+                default=defaults.get(
+                    CONF_MAX_STORAGE_CHARGE_POWER_W,
+                    DEFAULT_MAX_STORAGE_CHARGE_POWER_W,
+                ),
+            ): vol.All(vol.Coerce(float), vol.Range(min=0)),
+            vol.Optional(
+                CONF_CLIPPING_SAFETY_RESERVE_W,
+                default=defaults.get(
+                    CONF_CLIPPING_SAFETY_RESERVE_W,
+                    DEFAULT_CLIPPING_SAFETY_RESERVE_W,
                 ),
             ): vol.All(vol.Coerce(float), vol.Range(min=0)),
         }
@@ -133,11 +173,18 @@ def _normalize_user_input(user_input: dict[str, Any]) -> dict[str, Any]:
     if CONF_NAME in normalized and isinstance(normalized[CONF_NAME], str):
         normalized[CONF_NAME] = normalized[CONF_NAME].strip() or DEFAULT_NAME
 
-    for key in (
+    float_keys = (
         CONF_BATTERY_NOMINAL_CAPACITY_KWH,
         CONF_PV_NOMINAL_POWER_KW,
         CONF_INVERTER_NOMINAL_POWER_KW,
-    ):
+        CONF_PV_FEED_IN_LIMIT_PERCENT,
+        CONF_BASE_LOAD_W,
+        CONF_FLEXIBLE_LOAD_AVAILABLE_W,
+        CONF_MAX_STORAGE_CHARGE_POWER_W,
+        CONF_CLIPPING_SAFETY_RESERVE_W,
+    )
+
+    for key in float_keys:
         if key not in normalized or normalized[key] in (None, ""):
             normalized[key] = 0.0
         else:
@@ -167,6 +214,7 @@ class AmpereModbusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     f"{user_input[CONF_PORT]}:"
                     f"{user_input.get(CONF_UNIT, DEFAULT_UNIT)}"
                 )
+
                 await self.async_set_unique_id(unique_id)
                 self._abort_if_unique_id_configured()
 
@@ -194,8 +242,9 @@ class AmpereModbusOptionsFlowHandler(config_entries.OptionsFlow):
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize the options flow.
 
-        Do not assign to self.config_entry. In current Home Assistant versions
-        OptionsFlow already exposes config_entry as a read-only property.
+        Do not assign to self.config_entry.
+        In current Home Assistant versions OptionsFlow already exposes
+        config_entry as a read-only property.
         """
         self._config_entry = config_entry
 
