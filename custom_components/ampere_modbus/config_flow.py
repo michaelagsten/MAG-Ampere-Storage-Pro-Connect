@@ -173,20 +173,20 @@ def _normalize_user_input(user_input: dict[str, Any]) -> dict[str, Any]:
     if CONF_NAME in normalized and isinstance(normalized[CONF_NAME], str):
         normalized[CONF_NAME] = normalized[CONF_NAME].strip() or DEFAULT_NAME
 
-    float_keys = (
-        CONF_BATTERY_NOMINAL_CAPACITY_KWH,
-        CONF_PV_NOMINAL_POWER_KW,
-        CONF_INVERTER_NOMINAL_POWER_KW,
-        CONF_PV_FEED_IN_LIMIT_PERCENT,
-        CONF_BASE_LOAD_W,
-        CONF_FLEXIBLE_LOAD_AVAILABLE_W,
-        CONF_MAX_STORAGE_CHARGE_POWER_W,
-        CONF_CLIPPING_SAFETY_RESERVE_W,
-    )
+    float_defaults = {
+        CONF_BATTERY_NOMINAL_CAPACITY_KWH: DEFAULT_BATTERY_NOMINAL_CAPACITY_KWH,
+        CONF_PV_NOMINAL_POWER_KW: DEFAULT_PV_NOMINAL_POWER_KW,
+        CONF_INVERTER_NOMINAL_POWER_KW: DEFAULT_INVERTER_NOMINAL_POWER_KW,
+        CONF_PV_FEED_IN_LIMIT_PERCENT: DEFAULT_PV_FEED_IN_LIMIT_PERCENT,
+        CONF_BASE_LOAD_W: DEFAULT_BASE_LOAD_W,
+        CONF_FLEXIBLE_LOAD_AVAILABLE_W: DEFAULT_FLEXIBLE_LOAD_AVAILABLE_W,
+        CONF_MAX_STORAGE_CHARGE_POWER_W: DEFAULT_MAX_STORAGE_CHARGE_POWER_W,
+        CONF_CLIPPING_SAFETY_RESERVE_W: DEFAULT_CLIPPING_SAFETY_RESERVE_W,
+    }
 
-    for key in float_keys:
+    for key, default in float_defaults.items():
         if key not in normalized or normalized[key] in (None, ""):
-            normalized[key] = 0.0
+            normalized[key] = float(default)
         else:
             normalized[key] = float(normalized[key])
 
