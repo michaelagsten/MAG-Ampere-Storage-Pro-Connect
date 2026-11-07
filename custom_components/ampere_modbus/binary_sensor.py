@@ -8,8 +8,7 @@ from homeassistant.components.binary_sensor import (
     BinarySensorEntity,
     BinarySensorEntityDescription,
 )
-from homeassistant.const import CONF_NAME
-from homeassistant.helpers.entity import EntityCategory
+from homeassistant.const import CONF_NAME, EntityCategory
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import ATTR_MANUFACTURER, DOMAIN
